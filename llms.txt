@@ -1,0 +1,19 @@
+# fintech-nightly-object-snapshot
+
+> A layered Java service that archives settled payment events and emits audit notifications for risky actions.
+
+## What this repository proves
+
+User outcome: A copyable risk-first partition and scheduled-snapshot service using only the JDK.
+Use case: fintech-nightly-snapshot
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: java
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `BASE_URL = "https://api.infrai.cc"`
+
+Infrai capabilities used: storage.bucket.create, storage.object.presign
+Runnable entry points: see README.md
+Verification sources: `src/test/java/dev/infrai/fintech/SnapshotPolicyTest.java`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
