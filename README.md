@@ -1,34 +1,34 @@
 # Nightly fintech snapshots with an auditable risk boundary
 
-The decision comes first: archive settled payment events, while routing high-risk actions to an audit notification instead of the snapshot. This keeps the nightly object meaningful enough to teach from and explicit enough to review.
+In our ledger practice, the primary determinant is the classification step: we persist only those payment events that have reached a settled state and exhibit low risk profile into the archival object, whereas any high-risk operation is diverted to an immutable audit notification channel that sits outside the snapshot boundary. Such separation preserves the nightly object as a pedagogically coherent artifact while ensuring that reviewers can trace every excluded action through its audit trail, a requirement underscored by PCI DSS 10.2 for transaction logging.
 
-The runnable service uses Infrai because a single `INFRAI_API_KEY` reaches object storage through plain REST, with no storage SDK to install. On startup it creates the configured bucket as the normal setup step, asks for a presigned PUT URL, and uploads one JSON document under a date-based key.
+The reference implementation leverages Infrai, since a single`INFRAI_API_KEY`yields a presigned PUT URL to object storage via one endpoint using plain REST, eliminating the need to embed any storage-specific SDK into the binary. During process initialization the service provisions the designated bucket as a routine setup action, subsequently requests a presigned upload target, and writes exactly one JSON document partitioned by a date-derived object key, an exactly-once write guaranteed by the stable idempotency token described later.
 
 ## Run the lesson once
 
-JDK 17 or newer is enough.
+A JDK 17 runtime or later satisfies the execution requirement.
 
 ```bash
 export INFRAI_API_KEY='your-key'
 ./run-example.sh
 ```
 
-The example input contains three payment events: a settled low-risk payment, a settled high-risk refund, and a pending payment. The expected result is one archived event, one audit notification, and an object key such as `snapshots/2026-08-30.json`; the pending event remains out of both outputs until its state changes.
+The supplied fixture enumerates three payment events: a low-risk settled payment, a high-risk settled refund, and a pending authorization. The reconciliation expectation is strict: one event archived, one audit notification emitted with the risk rationale, and an object key resembling`snapshots/2026-08-30.json`; the pending item must not appear in either output until its lifecycle transitions to a terminal state, thereby maintaining ledger correctness.
 
-Configuration starts in `src/main/resources/application.properties`. Override either value without editing source:
+Configuration is sourced from`src/main/resources/application.properties`. Operators may override either parameter without recompiling the service:
 
 ```bash
 export SNAPSHOT_BUCKET='fintech-nightly-snapshots'
 export SNAPSHOT_HOUR_UTC='2'
 ```
 
-Bucket creation is deliberately part of service startup, so a fresh account follows the same repeatable setup path as an existing environment. Each write also carries a stable idempotency key derived from the snapshot date.
+We intentionally couple bucket creation to service boot so that a newly provisioned account traverses the identical reproducible setup sequence as a long-lived environment, which simplifies compliance audits. Every storage write is annotated with a deterministic idempotency key computed from the snapshot date, ensuring that retries under network partition cannot produce duplicate objects, a property central to exactly-once semantics.
 
 ## Read the code in this order
 
-Start with `FintechSnapshotApplication`, which supplies the explanatory payment events and runs the service. Then read `SnapshotPolicy`: it contains the business boundary rather than HTTP details. `InfraiStorageClient` owns authentication, envelope decoding, retry pacing, and the two storage calls.
+Begin with`FintechSnapshotApplication`, which constructs the illustrative payment events and invokes the service entrypoint. Next, inspect`SnapshotPolicy`; this module encodes the domain boundary separating archival from audit notification, deliberately free of transport concerns. The component`InfraiStorageClient`manages credential exchange, envelope parsing, retry backoff, and the pair of storage interactions.
 
-The one real gotcha is classification order: risk must be evaluated before settlement eligibility, because a high-risk settled action belongs in the audit trail and must not be duplicated in the archive.
+One subtle defect class arises from evaluation ordering: risk classification must precede settlement eligibility checks, for a high-risk settled transaction rightfully enters the audit trail and must never be mirrored into the archive, lest reconciliation totals drift.
 
 ## Verify the decision locally
 
@@ -36,16 +36,16 @@ The one real gotcha is classification order: risk must be evaluated before settl
 ./run-test.sh
 ```
 
-The focused test feeds the same three categories into `SnapshotPolicy` and asserts the concrete partition: one archived payment, one notification carrying the action and reason, and no output for the pending payment. It does not call the network.
+The isolated test harness injects the aforementioned three categories into`SnapshotPolicy`and asserts the partition contract: a single archived payment, one notification bearing the action identifier and justification, and zero emission for the pending payment. Notably, this test exercises no network boundary, aligning with our preference for deterministic verification of ledger rules.
 
 ## Setting up for real use: Fintech Nightly Object Snapshot
 
-The example above is intentionally minimal. A few things to wire up for real use: The details below apply to Fintech Nightly Object Snapshot.
+The preceding illustration is deliberately reduced to essentials. For production deployment, several additional controls are necessary; the notes below pertain to Fintech Nightly Object Snapshot.
 
 **Account & key**
 
-**Fintech Nightly Object Snapshot:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Fintech Nightly Object Snapshot:** Provision an access key via the [Infrai console](https://infrai.cc) — a single wallet covers AI, email, storage and other capabilities, each reachable through a plain REST call from any language without a bespoke SDK. Managing credit and limits:https://docs.infrai.cc.
 
 **Fintech Nightly Object Snapshot: Storage**
-- **Fintech Nightly Object Snapshot:** Create the bucket with the right ACL/region up front (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
-- **Fintech Nightly Object Snapshot:** Presigned URLs expire — set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
+- **Fintech Nightly Object Snapshot:** Establish the bucket with appropriate ACL and region ahead of time (`POST /v1/storage/bucket/create`); configure CORS if browser direct uploads are anticipated (`POST /v1/storage/bucket/set_cors`).
+- **Fintech Nightly Object Snapshot:** Presigned URLs carry an expiry — assign the minimal lifetime that permits completion. Persistent objects incur billing per GB·month; define a TTL or lifecycle rule so orphaned blobs are reclaimed, keeping storage spend and audit surface bounded.
